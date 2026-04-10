@@ -1,151 +1,57 @@
-name: Chocolatine Integration
+name: chocolatine
 
 on:
   push:
-    branches-ignore:
-      - "no-ga/**"
+    branches-ignore: ['no-ga/**']
   pull_request:
-    branches-ignore:
-      - "no-ga/**"
+    branches-ignore: ['no-ga/**']
+
+permissions:
+  contents: read
 
 env:
   MIRROR_SSH_URL: ${{ vars.MIRROR_SSH_URL }}
   EXECUTABLES: ${{ vars.EXECUTABLES }}
 
 jobs:
-  check_if_workflow_should_run:
-    name: Checks if the workflow should run
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check_if_repository_is_mirror.outputs.should_run }}
-    steps:
-      - name: Checking if the repository is the mirror repository
-        id: check_if_repository_is_mirror
-        shell: bash
-        run: |
-          if [[ $MIRROR_SSH_URL =~ $GITHUB_REPOSITORY ]]; then
-            echo "The repository is the mirror repository"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          else
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          fi
-
   check_compilation_and_coding_style:
-    name: Checks compilation and coding style compliance
-    needs: [check_if_workflow_should_run]
-    if: ${{ needs.check_if_workflow_should_run.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
-    container: epitechcontent/epitest-docker:latest
+    container: epitechcontent/epitest-docker
     steps:
-      - name: Fetching repository
-        uses: actions/checkout@v6
-
-      - name: Running banana-check-repo
-        id: running_banana_check_repo
-        run: |
-          echo "report<<EOF" >> $GITHUB_OUTPUT
-          (banana-check-repo || exit 0) >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Running make command
-        id: running_make
-        shell: bash
-        run: |
-          set -o pipefail
-          CC=epiclang make 2>&1 | tee make.log
-          echo "report<<EOF" >> $GITHUB_OUTPUT
-          cat make.log >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+      - name: check_coding_style
+        run: banana-check-repo
+      - name: compile
+        run: make
         timeout-minutes: 2
-
-      - name: Initializing FAIL_TASK environment variable
-        run: |
-          echo "FAIL_TASK=false" >> "$GITHUB_ENV"
-
-      - name: Displaying banana-check-repo script coding style infringements as error annotations
-        shell: bash
-        run: |
-          REPORT='${{ steps.running_banana_check_repo.outputs.report }}'
-          IFS='
-          '
-          for ERROR in $REPORT; do
-            if [[ $ERROR =~ \[Banana\] ]]; then
-              echo "FAIL_TASK=true" >> "$GITHUB_ENV"
-              FILE=$(echo $ERROR | cut -d ':' -f 1)
-              LEVEL=$(echo $ERROR | cut -d '[' -f 3 | cut -d ']' -f 1)
-              RULE=$(echo $ERROR | cut -d '(' -f 2 | cut -d ')' -f 1)
-              DETAIL=$(echo $ERROR | cut -d ']' -f 3 | cut -d '(' -f 1 | xargs)
-              echo "::error file=${FILE},title=${LEVEL} coding style error::${RULE} - ${DETAIL}"
-            fi
-          done
-
-      - name: Displaying make command coding style infringements as error annotations
-        shell: bash
-        run: |
-          REPORT='${{ steps.running_make.outputs.report }}'
-          IFS='
-          '
-          for ERROR in $REPORT; do
-            if [[ $ERROR =~ \[Banana\] ]]; then
-              echo "FAIL_TASK=true" >> "$GITHUB_ENV"
-              FILE=$(echo $ERROR | cut -d ':' -f 1)
-              LINE=$(echo $ERROR | cut -d ':' -f 2)
-              LEVEL=$(echo $ERROR | cut -d '[' -f 3 | cut -d ']' -f 1)
-              RULE=$(echo $ERROR | cut -d '(' -f 2 | cut -d ')' -f 1)
-              DETAIL=$(echo $ERROR | cut -d ']' -f 3 | cut -d '(' -f 1 | xargs)
-              echo "::error file=${FILE},line=${LINE},title=${LEVEL} coding style error::${RULE} - ${DETAIL}"
-            fi
-          done
-      - name: Failing if there are any coding style errors
-        if: env.FAIL_TASK == 'true'
-        run: exit 1
-
-      - run: make clean
-
-      - name: Verifies that files are present and executable
-        run: |
-          echo "FAIL_TASK=false" >> "$GITHUB_ENV"
-          SEARCH_BINARIES="${{ env.EXECUTABLES }}"
-          IFS=$','
-          for BIN in $SEARCH_BINARIES; do
-              if [ ! -f "${BIN}" ]; then
-                  echo "::error file=${BIN},title=Binary not found::${BIN}"
-                  echo "FAIL_TASK=true" >> "$GITHUB_ENV"
-              elif [ ! -x "${BIN}" ]; then
-                  echo "::error file=${BIN},title=Binary not executable::${BIN}"
-                  echo "FAIL_TASK=true" >> "$GITHUB_ENV"
-              fi
-          done
-      - name: Fail if needed
-        if: env.FAIL_TASK == 'true'
-        run: exit 1
+        env:
+          CC: epiclang
+      - name: clean
+        run: make clean
 
   run_tests:
-    name: Checks that all the tests pass
-    needs: [check_compilation_and_coding_style]
+    needs: check_compilation_and_coding_style
     runs-on: ubuntu-latest
-    container: epitechcontent/epitest-docker:latest
+    container: epitechcontent/epitest-docker
     steps:
-      - name: Fetching repository
-        uses: actions/checkout@v6
-
-      - name: Running tests using "make tests_run"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+      - name: run_tests
         run: make tests_run
         timeout-minutes: 2
 
   push_to_mirror:
-    name: Pushes the current repository files to a given mirror repository
-    needs: [run_tests]
-    if: ${{ github.event_name == 'push' }}
+    needs: run_tests
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Fetching repository
-        uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-
-      - name: Push mirror repository
-        uses: pixta-dev/repository-mirroring-action@v1
+      - uses: pixta-dev/repository-mirroring-action@v1
         with:
           target_repo_url: ${{ env.MIRROR_SSH_URL }}
           ssh_private_key: ${{ secrets.GIT_SSH_PRIVATE_KEY }}
