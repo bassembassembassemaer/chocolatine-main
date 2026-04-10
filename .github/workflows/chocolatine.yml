@@ -2,56 +2,58 @@ name: chocolatine
 
 on:
   push:
-    branches-ignore: ['no-ga/**']
+    branches-ignore:
+      - 'no-ga/**'
   pull_request:
-    branches-ignore: ['no-ga/**']
-
-permissions:
-  contents: read
+    branches-ignore:
+      - 'no-ga/**'
 
 env:
-  MIRROR_SSH_URL: ${{ vars.MIRROR_SSH_URL }}
-  EXECUTABLES: ${{ vars.EXECUTABLES }}
+  MIRROR_SSH_URL: "git@github.com:EpitechPGE1-2025/G-DOP-200-LYN-2-1-chocolatine-10.git"
+  EXECUTABLES: "mysh"
 
 jobs:
   check_compilation_and_coding_style:
+    if: github.repository_owner != 'EpitechPGE1-2025'
     runs-on: ubuntu-latest
-    container: epitechcontent/epitest-docker
+    container:
+      image: epitechcontent/epitest-docker
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 1
-      - name: check_coding_style
-        run: banana-check-repo
-      - name: compile
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Run coding style check
+        run: banana-check-repo .
+      - name: Compile repository
         run: make
-        timeout-minutes: 2
         env:
           CC: epiclang
-      - name: clean
+        timeout-minutes: 2
+      - name: Clean repository
         run: make clean
-
   run_tests:
     needs: check_compilation_and_coding_style
+    if: github.repository_owner != 'EpitechPGE1-2025'
     runs-on: ubuntu-latest
-    container: epitechcontent/epitest-docker
+    container:
+      image: epitechcontent/epitest-docker
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 1
-      - name: run_tests
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Run tests
         run: make tests_run
         timeout-minutes: 2
-
   push_to_mirror:
     needs: run_tests
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository_owner != 'EpitechPGE1-2025'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: pixta-dev/repository-mirroring-action@v1
+
+      - name: Mirroring to Epitech
+        uses: pixta-dev/repository-mirroring-action@v1
         with:
           target_repo_url: ${{ env.MIRROR_SSH_URL }}
           ssh_private_key: ${{ secrets.GIT_SSH_PRIVATE_KEY }}
