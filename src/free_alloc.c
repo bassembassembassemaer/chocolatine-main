@@ -50,14 +50,11 @@ void reset_pipeline(pipeline_ctx_t *pipeline)
     pipeline->rdr = NULL;
 }
 
-params_t set_param()
+params_t set_param(void)
 {
     params_t params;
     shell_t sh;
     pipeline_ctx_t pipeline;
-
-
-
 
     sh.loop = 1;
     sh.envp = NULL;
@@ -66,7 +63,6 @@ params_t set_param()
     reset_pipeline(&pipeline);
     params.execs = pipeline;
     return params;
-
 }
 
 int set_program(params_t *params, char **envp)
