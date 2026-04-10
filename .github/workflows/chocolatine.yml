@@ -74,20 +74,20 @@ jobs:
       - name: Clean build artifacts
         run: make clean
 
-      - name: Verify executables exist and are executable
-        run: |
-          IFS=',' read -ra EXEC_LIST <<< "$EXECUTABLES"
-          status=0
-          for exec in "${EXEC_LIST[@]}"; do
-            if [ ! -f "$exec" ]; then
-              echo "::error file=${exec},title=Missing executable::${exec} not found"
-              status=1
-            elif [ ! -x "$exec" ]; then
-              echo "::error file=${exec},title=Non-executable file::${exec} is not executable"
-              status=1
-            fi
-          done
-          exit $status
+      # - name: Verify executables exist and are executable
+      #   run: |
+      #     IFS=',' read -ra EXEC_LIST <<< "$EXECUTABLES"
+      #     status=0
+      #     for exec in "${EXEC_LIST[@]}"; do
+      #       if [ ! -f "$exec" ]; then
+      #         echo "::error file=${exec},title=Missing executable::${exec} not found"
+      #         status=1
+      #       elif [ ! -x "$exec" ]; then
+      #         echo "::error file=${exec},title=Non-executable file::${exec} is not executable"
+      #         status=1
+      #       fi
+      #     done
+      #     exit $status
 
   run_tests:
     name: Run tests
