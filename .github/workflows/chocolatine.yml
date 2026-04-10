@@ -10,7 +10,7 @@ on:
 
 env:
   MIRROR_SSH_URL: ""
-  EXECUTABLES: "test"
+  EXECUTABLES: "mysh"
 
 jobs:
   check_if_workflow_should_run:
