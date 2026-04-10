@@ -1,10 +1,11 @@
-name: chocolatine
+name: Chocolatine
 
 on:
   push:
     branches-ignore:
       - 'no-ga/**'
   pull_request:
+    types: [opened]
     branches-ignore:
       - 'no-ga/**'
 
@@ -13,46 +14,109 @@ env:
   EXECUTABLES: ${{ vars.EXECUTABLES }}
 
 jobs:
+  check_mirror:
+    name: Check if repository is not the mirror
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check if current repository is the mirror
+        id: check
+        run: |
+          MIRROR_REPO=$(echo "$MIRROR_SSH_URL" | sed 's/.*://;s/\.git$//')
+          BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          if [ "$GITHUB_REPOSITORY" = "$MIRROR_REPO" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$BRANCH_NAME" == no-ga/* ]]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   check_compilation_and_coding_style:
-    if: github.repository_owner != 'EpitechPGE1-2025'
+    name: Check compilation and coding style
     runs-on: ubuntu-latest
     container:
       image: epitechcontent/epitest-docker
+    needs: check_mirror
+    if: needs.check_mirror.outputs.should_run == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
-      - name: Run coding style check
-        run: banana-check-repo .
-      - name: Compile repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check repository with banana-check-repo
+        run: banana-check-repo
+
+      - name: Compile project
         run: make
+        timeout-minutes: 2
         env:
           CC: epiclang
-        timeout-minutes: 2
-      - name: Clean repository
+
+      - name: Display coding style errors
+        run: |
+          if [ -f coding-style-reports.log ]; then
+            while IFS=':' read -r file line severity code; do
+              file=$(echo "$file" | sed 's|^\./||')
+              severity_formatted=$(echo "$severity" | sed 's/.*/\L&/;s/^./\U&/')
+              echo "::error file=${file},line=${line},title=${severity_formatted} coding style error::${code}"
+            done < coding-style-reports.log
+          fi
+
+      - name: Fail if there are coding style errors
+        run: |
+          if [ -f coding-style-reports.log ] && [ -s coding-style-reports.log ]; then
+            exit 1
+          fi
+
+      - name: Clean build artifacts
         run: make clean
+
+      - name: Verify executables exist and are executable
+        run: |
+          IFS=',' read -ra EXEC_LIST <<< "$EXECUTABLES"
+          status=0
+          for exec in "${EXEC_LIST[@]}"; do
+            if [ ! -f "$exec" ]; then
+              echo "::error file=${exec},title=Missing executable::${exec} not found"
+              status=1
+            elif [ ! -x "$exec" ]; then
+              echo "::error file=${exec},title=Non-executable file::${exec} is not executable"
+              status=1
+            fi
+          done
+          exit $status
+
   run_tests:
-    needs: check_compilation_and_coding_style
-    if: github.repository_owner != 'EpitechPGE1-2025'
+    name: Run tests
     runs-on: ubuntu-latest
     container:
       image: epitechcontent/epitest-docker
+    needs: check_compilation_and_coding_style
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Run tests
         run: make tests_run
         timeout-minutes: 2
+
   push_to_mirror:
-    needs: run_tests
-    if: github.event_name == 'push' && github.repository_owner != 'EpitechPGE1-2025'
+    name: Push to mirror repository
     runs-on: ubuntu-latest
+    needs: run_tests
+    if: github.event_name == 'push'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Mirroring to Epitech
+      - name: Mirror repository
         uses: pixta-dev/repository-mirroring-action@v1
         with:
           target_repo_url: ${{ env.MIRROR_SSH_URL }}
